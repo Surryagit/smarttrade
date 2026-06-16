@@ -1,0 +1,156 @@
+{% extends 'base.html' %}
+
+{% block title %}Risk Analysis{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Risk Analysis 🧠</h2>
+    <p>AI-powered portfolio risk assessment</p>
+</div>
+
+<!-- Portfolio Risk Summary -->
+<div class="risk-card">
+    <h3 style="color:#fff;margin-bottom:16px">Portfolio Risk Score</h3>
+    <div class="risk-score-big" id="portfolio-risk-score">...</div>
+    <div style="text-align:center;color:#888;margin-bottom:8px" id="portfolio-risk-label">Calculating...</div>
+    <div style="text-align:center;color:#aaa;font-size:14px" id="portfolio-recommendation"></div>
+</div>
+
+<!-- Individual Stock Risk -->
+<div class="section">
+    <h3 style="margin-bottom:20px">Individual Stock Risk</h3>
+    <div id="stock-risk-cards"></div>
+</div>
+
+<!-- Single Stock Lookup -->
+<div class="section">
+    <h3>Check Any Stock Risk</h3>
+    <div style="display:flex;gap:12px;margin-top:16px">
+        <input type="text" id="lookup-symbol" placeholder="Enter symbol (e.g. MSFT)" class="input-field" style="max-width:250px">
+        <button class="btn-primary" onclick="lookupStock()">Analyze</button>
+    </div>
+    <div id="lookup-result" style="margin-top:20px"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const token = localStorage.getItem('access_token');
+    if (!token) window.location.href = '/';
+
+    const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+    };
+
+    function getRiskColor(score) {
+        if (score < 30) return '#00c853';
+        if (score < 60) return '#ffa000';
+        return '#ff1744';
+    }
+
+    function renderMetrics(data) {
+        return `
+        <div class="risk-metrics-grid">
+            <div class="metric-box">
+                <div class="metric-label">Annual Return</div>
+                <div class="metric-value" style="color:${data.annual_return_pct >= 0 ? '#00c853' : '#ff1744'}">
+                    ${data.annual_return_pct}%
+                </div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Volatility</div>
+                <div class="metric-value">${data.volatility_pct}%</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Sharpe Ratio</div>
+                <div class="metric-value" style="color:${data.sharpe_ratio >= 1 ? '#00c853' : '#ffa000'}">
+                    ${data.sharpe_ratio}
+                </div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Max Drawdown</div>
+                <div class="metric-value" style="color:#ff1744">${data.max_drawdown_pct}%</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Beta</div>
+                <div class="metric-value">${data.beta}</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Risk Score</div>
+                <div class="metric-value" style="color:${getRiskColor(data.risk_score)}">
+                    ${data.risk_score}/100
+                </div>
+            </div>
+        </div>`;
+    }
+
+    async function loadPortfolioRisk() {
+        const res = await fetch('/api/analytics/portfolio/', {headers});
+        const data = await res.json();
+
+        if (data.error) {
+            document.getElementById('portfolio-risk-score').textContent = 'No stocks';
+            return;
+        }
+
+        const scoreEl = document.getElementById('portfolio-risk-score');
+        scoreEl.textContent = data.portfolio_risk_score + '/100';
+        scoreEl.style.color = getRiskColor(data.portfolio_risk_score);
+
+        document.getElementById('portfolio-risk-label').textContent = data.portfolio_risk_label;
+        document.getElementById('portfolio-recommendation').textContent = data.recommendation;
+
+        // Individual stocks
+        const container = document.getElementById('stock-risk-cards');
+        data.stocks.forEach(stock => {
+            container.innerHTML += `
+            <div class="risk-card" style="margin-bottom:16px">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <div>
+                        <strong style="font-size:18px;color:#fff">${stock.symbol}</strong>
+                        <span style="margin-left:12px;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;
+                            background:${getRiskColor(stock.risk_score)}20;
+                            color:${getRiskColor(stock.risk_score)}">
+                            ${stock.risk_label} Risk
+                        </span>
+                    </div>
+                    <div style="font-size:24px;font-weight:700;color:${getRiskColor(stock.risk_score)}">
+                        ${stock.risk_score}/100
+                    </div>
+                </div>
+                ${renderMetrics(stock)}
+            </div>`;
+        });
+    }
+
+    async function lookupStock() {
+        const symbol = document.getElementById('lookup-symbol').value.toUpperCase().trim();
+        if (!symbol) return;
+
+        const resultEl = document.getElementById('lookup-result');
+        resultEl.innerHTML = '<p style="color:#888">Analyzing... please wait 10-15 seconds</p>';
+
+        const res = await fetch(`/api/analytics/stock/${symbol}/`, {headers});
+        const data = await res.json();
+
+        if (data.error) {
+            resultEl.innerHTML = `<p style="color:#ff1744">${data.error}</p>`;
+            return;
+        }
+
+        resultEl.innerHTML = `
+        <div class="risk-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                <strong style="font-size:20px;color:#fff">${data.symbol}</strong>
+                <div style="font-size:28px;font-weight:700;color:${getRiskColor(data.risk_score)}">
+                    ${data.risk_score}/100 (${data.risk_label} Risk)
+                </div>
+            </div>
+            ${renderMetrics(data)}
+        </div>`;
+    }
+
+    loadPortfolioRisk();
+</script>
+{% endblock %}

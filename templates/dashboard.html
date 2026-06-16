@@ -1,0 +1,196 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Welcome back, <span id="username">...</span> 👋</h2>
+    <p>Here's your portfolio summary</p>
+</div>
+
+<!-- Summary Cards -->
+<div class="cards-grid">
+    <div class="card">
+        <div class="card-label">Total Invested</div>
+        <div class="card-value" id="total-invested">$0.00</div>
+    </div>
+    <div class="card">
+        <div class="card-label">Current Value</div>
+        <div class="card-value" id="current-value">$0.00</div>
+    </div>
+    <div class="card profit">
+        <div class="card-label">Total Profit/Loss</div>
+        <div class="card-value" id="profit-loss">$0.00</div>
+    </div>
+    <div class="card">
+        <div class="card-label">Portfolio Risk</div>
+        <div class="card-value" id="risk-score">...</div>
+    </div>
+</div>
+
+<!-- Stock Table -->
+<div class="section">
+    <div class="section-header">
+        <h3>Your Stocks</h3>
+        <button class="btn-primary" onclick="window.location.href='/portfolio/'">+ Add Stock</button>
+    </div>
+    <table class="stock-table">
+        <thead>
+            <tr>
+                <th>Symbol</th>
+                <th>Name</th>
+                <th>Qty</th>
+                <th>Buy Price</th>
+                <th>Current Price</th>
+                <th>Invested</th>
+                <th>Current Value</th>
+                <th>P/L</th>
+                <th>P/L %</th>
+            </tr>
+        </thead>
+        <tbody id="stock-tbody">
+            <tr><td colspan="9" style="text-align:center">Loading...</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- Chart -->
+<div class="section">
+    <h3>Portfolio Breakdown</h3>
+    <div class="chart-container">
+        <canvas id="portfolioChart"></canvas>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const token = localStorage.getItem('access_token');
+    if (!token) window.location.href = '/';
+
+    const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+    };
+
+    async function loadDashboard() {
+        // Load profile
+        const profileRes = await fetch('/api/accounts/profile/', {headers});
+        const profile = await profileRes.json();
+        document.getElementById('username').textContent = profile.username;
+
+        // Load portfolio value
+        const portfolioRes = await fetch('/api/market/portfolio-value/', {headers});
+        const portfolio = await portfolioRes.json();
+
+        document.getElementById('total-invested').textContent = '$' + portfolio.total_invested.toFixed(2);
+        document.getElementById('current-value').textContent = '$' + portfolio.total_current_value.toFixed(2);
+
+        const pl = portfolio.total_profit_loss;
+        const plPct = portfolio.total_profit_loss_pct;
+        const plEl = document.getElementById('profit-loss');
+        plEl.textContent = (pl >= 0 ? '+$' : '-$') + Math.abs(pl).toFixed(2) + ' (' + plPct.toFixed(2) + '%)';
+        plEl.style.color = pl >= 0 ? '#00c853' : '#ff1744';
+
+        // Fill table
+        const tbody = document.getElementById('stock-tbody');
+        tbody.innerHTML = '';
+        const labels = [];
+        const values = [];
+
+        portfolio.stocks.forEach(stock => {
+            const pl = stock.profit_loss;
+            const row = `<tr>
+                <td><strong>${stock.symbol}</strong></td>
+                <td>${stock.name}</td>
+                <td>${stock.quantity}</td>
+                <td>$${stock.buy_price.toFixed(2)}</td>
+                <td>$${stock.current_price.toFixed(2)}</td>
+                <td>$${stock.invested.toFixed(2)}</td>
+                <td>$${stock.current_value.toFixed(2)}</td>
+                <td style="color:${pl >= 0 ? '#00c853' : '#ff1744'}">${pl >= 0 ? '+' : ''}$${pl.toFixed(2)}</td>
+                <td style="color:${pl >= 0 ? '#00c853' : '#ff1744'}">${stock.profit_loss_pct.toFixed(2)}%</td>
+            </tr>`;
+            tbody.innerHTML += row;
+            labels.push(stock.symbol);
+            values.push(stock.current_value);
+        });
+
+        // Load risk score
+        const riskRes = await fetch('/api/analytics/portfolio/', {headers});
+        const risk = await riskRes.json();
+        const riskEl = document.getElementById('risk-score');
+        riskEl.textContent = risk.portfolio_risk_score + '/100 (' + risk.portfolio_risk_label + ')';
+        riskEl.style.color = risk.portfolio_risk_score < 30 ? '#00c853' : risk.portfolio_risk_score < 60 ? '#ffa000' : '#ff1744';
+
+        // Draw chart
+        new Chart(document.getElementById('portfolioChart'), {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: ['#6c63ff', '#00c853', '#ffa000', '#ff1744', '#00bcd4'],
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { position: 'bottom' } }
+            }
+        });
+    }
+
+    function logout() {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        window.location.href = '/';
+    }
+
+    loadDashboard();
+    // WebSocket live prices
+    function connectWebSocket() {
+        const ws = new WebSocket('ws://127.0.0.1:8000/ws/prices/');
+
+        ws.onopen = function() {
+            console.log('WebSocket connected!');
+            // Send list of symbols to track
+            const symbols = [];
+            document.querySelectorAll('#stock-tbody tr td:first-child strong').forEach(el => {
+                symbols.push(el.textContent);
+            });
+            ws.send(JSON.stringify({symbols: symbols}));
+        };
+
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            if (data.type === 'price_update') {
+                console.log('Live prices:', data.prices);
+                // Update current price cells in table
+                const rows = document.querySelectorAll('#stock-tbody tr');
+                rows.forEach(row => {
+                    const symbolEl = row.querySelector('td:first-child strong');
+                    if (symbolEl) {
+                        const symbol = symbolEl.textContent;
+                        if (data.prices[symbol]) {
+                            const priceCell = row.querySelector('td:nth-child(5)');
+                            if (priceCell) {
+                                priceCell.textContent = '$' + data.prices[symbol].toFixed(2);
+                                priceCell.style.color = '#6c63ff';
+                                setTimeout(() => priceCell.style.color = '', 1000);
+                            }
+                        }
+                    }
+                });
+            }
+        };
+
+        ws.onclose = function() {
+            console.log('WebSocket disconnected. Reconnecting in 5s...');
+            setTimeout(connectWebSocket, 5000);
+        };
+    }
+
+    // Connect WebSocket after dashboard loads
+    setTimeout(connectWebSocket, 3000);
+</script>
+{% endblock %}
