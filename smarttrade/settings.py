@@ -141,7 +141,7 @@ REST_FRAMEWORK = {
 CORS_ALLOW_ALL_ORIGINS = True
 # Custom user model
 AUTH_USER_MODEL = 'accounts.CustomUser'
-git add .
+
 from datetime import timedelta
 
 SIMPLE_JWT = {
@@ -156,3 +156,5 @@ CHANNEL_LAYERS = {
         'BACKEND': 'channels.layers.InMemoryChannelLayer'
     }
 }
+ALLOWED_HOSTS = ['*']
+DEBUG = False
