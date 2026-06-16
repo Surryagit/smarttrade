@@ -20,12 +20,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-a(5c#abiq-t628k1xjrs6g(%8v192mrpsw987f8s1#ns=w)eo*'
+SECRET_KEY = 'PY '
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['smarttrade-fh48.onrender.com']
 
 
 # Application definition
@@ -141,7 +141,7 @@ REST_FRAMEWORK = {
 CORS_ALLOW_ALL_ORIGINS = True
 # Custom user model
 AUTH_USER_MODEL = 'accounts.CustomUser'
-
+git add .
 from datetime import timedelta
 
 SIMPLE_JWT = {
